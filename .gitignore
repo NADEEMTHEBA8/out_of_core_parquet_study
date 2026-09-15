@@ -1,0 +1,18 @@
+# Physical Data Continuum (Multi-GB Parquet Files)
+data/*.parquet
+# Engine Spill & Scratchpads
+*_scratch/
+temp_directory/
+*.tmp
+# Python artifacts & caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+env/
+venv/
+.venv/
+# OS metadata
+.DS_Store
