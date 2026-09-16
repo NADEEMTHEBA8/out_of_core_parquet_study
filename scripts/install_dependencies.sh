@@ -32,12 +32,26 @@ else
     echo "[!] Warning: Non-APT system detected. Please install 'cgroup-tools', 'util-linux', and 'perf' via your package manager."
 fi
 
-# 2. Install Python Dependencies
+# 2. Setup Python Virtual Environment (.venv)
+VENV_DIR="${PROJECT_ROOT}/.venv"
+if [ ! -d "${VENV_DIR}" ]; then
+    echo "----------------------------------------------------------------------"
+    echo "[+] Creating Python virtual environment in '${VENV_DIR}'..."
+    python3 -m venv "${VENV_DIR}"
+fi
+
+echo "[+] Activating virtual environment..."
+# shellcheck source=/dev/null
+source "${VENV_DIR}/bin/activate"
+
+# 3. Install Python Dependencies inside Virtual Environment
 echo "----------------------------------------------------------------------"
-echo "[+] Installing Python packages from requirements.txt..."
+echo "[+] Installing Python packages into virtual environment from requirements.txt..."
 python3 -m pip install --upgrade pip
 python3 -m pip install -r "${PROJECT_ROOT}/requirements.txt"
 
 echo "======================================================================"
-echo "    ALL SYSTEM & PYTHON DEPENDENCIES INSTALLED SUCCESSFULLY!          "
+echo "    ALL DEPENDENCIES INSTALLED IN VENV SUCCESSFULLY!                 "
+echo "    To activate the virtual environment manually, run:                "
+echo "    source .venv/bin/activate                                         "
 echo "======================================================================"

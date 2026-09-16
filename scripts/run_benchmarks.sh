@@ -40,7 +40,13 @@ echo "Data Dir     : ${DATA_DIR}"
 echo "Results Dir  : ${RESULTS_DIR}"
 echo "----------------------------------------------------------------------"
 
-# 1. Environment Pre-Flight Checks
+# 1. Environment Pre-Flight Checks & Virtualenv Activation
+if [ -f "${PROJECT_ROOT}/.venv/bin/activate" ]; then
+    echo "[+] Activating virtual environment (${PROJECT_ROOT}/.venv)..."
+    # shellcheck source=/dev/null
+    source "${PROJECT_ROOT}/.venv/bin/activate"
+fi
+
 HAS_CGEXEC=0
 HAS_TASKSET=0
 HAS_SUDO=0
