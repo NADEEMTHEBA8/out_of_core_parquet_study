@@ -53,18 +53,23 @@ def generate_tpch_continuum(
             except (OSError, pa.ArrowInvalid) as err:
                 sys.stderr.write(f"Existing files invalid, re-generating: {err}\n")
 
+    print(f"[+] Connecting to DuckDB and loading TPC-H extension...", flush=True)
     con = duckdb.connect(database=":memory:")
     try:
         con.execute("INSTALL tpch; LOAD tpch;")
+        print(f"[+] Synthesizing TPC-H SF{scale_factor:.1f} dataset (~60,000,000 records)...", flush=True)
+        print("    (This takes ~45-60 seconds on CPU, please wait...)", flush=True)
         t0 = time.perf_counter()
         con.execute("CALL dbgen(sf=?);", [scale_factor])
-        _ = time.perf_counter() - t0
+        t_gen = time.perf_counter() - t0
+        print(f"[+] Data synthesis complete in {t_gen:.2f}s! Exporting 6 Parquet continuum files...", flush=True)
 
         results: List[Dict[str, Any]] = []
         for target_path, row_group_size in continuum_configs:
             if target_path.exists():
                 target_path.unlink()
 
+            print(f"    - Exporting '{target_path.name}' (ROW_GROUP_SIZE={row_group_size:,})...", flush=True)
             query = f"""
             COPY lineitem TO '{target_path}' (
                 FORMAT PARQUET,
@@ -75,6 +80,7 @@ def generate_tpch_continuum(
             con.execute(query)
             results.append(verify_parquet_metadata(target_path))
 
+        print("[+] All 6 Parquet continuum datasets generated successfully!", flush=True)
         return results
     except (duckdb.Error, OSError) as err:
         sys.stderr.write(f"Data generation failure: {err}\n")
