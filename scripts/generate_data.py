@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
+
+# Auto-switch to .venv python if executed via system python
+_venv_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
+if _venv_python.exists() and sys.executable != str(_venv_python):
+    os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
+
 from typing import Dict, Any, List, Tuple
 
 import duckdb

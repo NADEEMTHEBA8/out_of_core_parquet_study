@@ -14,6 +14,12 @@ Key Controls:
 
 import os
 import sys
+from pathlib import Path
+
+# Auto-switch to .venv python if executed via system python
+_venv_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
+if _venv_python.exists() and sys.executable != str(_venv_python):
+    os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
 
 # Critical: Set thread and streaming environment variables BEFORE importing Polars
 os.environ["POLARS_MAX_THREADS"] = "4"
