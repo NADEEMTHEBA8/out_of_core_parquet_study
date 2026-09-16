@@ -69,7 +69,14 @@ All benchmarks were conducted on a bare-metal testbed:
 
 ## 🚀 Step-by-Step Reproduction Guide
 
-### 1. Pre-Flight Hardware Audit
+### 1. Install Dependencies
+Run the automated dependency installer to set up system packages (`cgroup-tools`, `util-linux`, `perf`) and Python libraries:
+```bash
+./scripts/install_dependencies.sh
+```
+*(Or manually install Python packages via `pip install -r requirements.txt`).*
+
+### 2. Pre-Flight Hardware Audit
 Execute the environment audit script to verify CPU core count, governor settings, and storage mount:
 ```bash
 ./scripts/check_environment.sh
