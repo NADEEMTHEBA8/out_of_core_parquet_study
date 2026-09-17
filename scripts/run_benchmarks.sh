@@ -102,6 +102,8 @@ for rep in $(seq 1 ${REPETITIONS}); do
             purge_page_cache
 
             # Construct runner script command
+            RUNNER_SCRIPT="${PROJECT_ROOT}/src/${engine}_runner.py"
+
             # Launch target query runner inside native cgroups v2 slice and taskset affinity
             (
                 if [ -f "${CGROUP_PATH}/cgroup.procs" ]; then
