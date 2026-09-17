@@ -66,6 +66,7 @@ def get_dir_size_bytes(dir_path: Path) -> int:
 def run_duckdb_benchmark(
     parquet_path: Path,
     output_json: Path,
+    row_group_size: str = "unknown",
     threads: int = 4,
     memory_limit: Optional[str] = "1GB",
     scratch_dir: Optional[Path] = None,
@@ -112,17 +113,19 @@ def run_duckdb_benchmark(
         con.close()
 
     result_data = {
-        "engine": "DuckDB",
+        "engine": "duckdb",
+        "row_group_size": row_group_size,
         "parquet_path": str(parquet_path),
-        "threads": threads,
-        "memory_limit": memory_limit,
         "status": status,
-        "elapsed_sec": elapsed_sec,
+        "execution_time_ms": round(elapsed_sec * 1000.0, 3),
+        "elapsed_sec": round(elapsed_sec, 4),
         "result_rows": result_rows,
         "spilled_bytes": spilled_bytes,
-        "spilled_mb": spilled_bytes / (1024 * 1024),
+        "spilled_mb": round(spilled_bytes / (1024 * 1024), 3),
+        "threads": threads,
+        "memory_limit": memory_limit,
         "error_message": error_message,
-        "timestamp_epoch": time.time(),
+        "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
@@ -141,6 +144,12 @@ def main() -> None:
         type=Path,
         required=True,
         help="Target Parquet file path",
+    )
+    parser.add_argument(
+        "--row-group-size",
+        type=str,
+        default="unknown",
+        help="Row group size label (e.g., 10k, 50k, 122k, 250k, 500k, 1m)",
     )
     parser.add_argument(
         "--output-json",
@@ -171,10 +180,14 @@ def main() -> None:
     res = run_duckdb_benchmark(
         args.parquet_path,
         args.output_json,
+        args.row_group_size,
         args.threads,
         args.memory_limit,
         args.scratch_dir,
     )
+    print(json.dumps(res, indent=2))
+    print(f"\n[+] Saved metrics to {args.output_json}")
+
     if res["status"] != "SUCCESS":
         sys.exit(137 if res["status"] == "OOM" else 1)
 

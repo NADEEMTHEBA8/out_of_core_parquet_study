@@ -117,9 +117,12 @@ def run_polars_benchmark(parquet_path: str, row_group_size: str) -> dict:
             )
         )
 
-        # Isolated execution timing around collect(streaming=True)
+        # Isolated execution timing around streaming collect
         query_start_ns = time.perf_counter_ns()
-        res_df = query.collect(streaming=True)
+        try:
+            res_df = query.collect(engine="streaming")
+        except TypeError:
+            res_df = query.collect(streaming=True)
         query_end_ns = time.perf_counter_ns()
 
         execution_time_ms = (query_end_ns - query_start_ns) / 1e6
