@@ -15,7 +15,7 @@ if [ -f "/sys/fs/cgroup/cgroup.subtree_control" ]; then
     echo "+memory" | sudo tee /sys/fs/cgroup/cgroup.subtree_control > /dev/null || true
 fi
 
-echo "[3/4] Enforcing memory limits..."
+echo "[3/4] Enforcing memory limits and granting user permissions..."
 # Soft Limit: 1 GB (1,073,741,824 bytes) - Triggers direct reclaim throttling
 echo "1G" | sudo tee "$CGROUP_DIR/memory.high" > /dev/null
 
@@ -24,6 +24,14 @@ echo "1500M" | sudo tee "$CGROUP_DIR/memory.max" > /dev/null
 
 # Disable Swap: 0 bytes - Prevents anonymous heap from paging to swap
 echo "0" | sudo tee "$CGROUP_DIR/memory.swap.max" > /dev/null
+
+# Grant ownership to SUDO_USER so non-root user can attach PIDs via cgexec
+TARGET_USER="${SUDO_USER:-$USER}"
+if [ -n "$TARGET_USER" ]; then
+    echo "  - Assigning cgroup node ownership to user '${TARGET_USER}'..."
+    sudo chown -R "${TARGET_USER}:" "$CGROUP_DIR" || true
+fi
+sudo chmod -R 777 "$CGROUP_DIR" || true
 
 echo "[4/4] Verifying cgroups v2 sandbox configuration:"
 echo "  - memory.high:     $(cat $CGROUP_DIR/memory.high)"

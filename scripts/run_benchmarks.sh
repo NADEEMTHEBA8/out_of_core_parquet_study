@@ -102,21 +102,23 @@ for rep in $(seq 1 ${REPETITIONS}); do
             purge_page_cache
 
             # Construct runner script command
-            RUNNER_SCRIPT="${PROJECT_ROOT}/src/${engine}_runner.py"
-
-            CMD_PREFIX=""
-            if [ "${HAS_CGEXEC}" -eq 1 ] && [ -d "${CGROUP_PATH}" ]; then
-                CMD_PREFIX="cgexec -g memory:${CGROUP_NAME} "
-            fi
-            if [ "${HAS_TASKSET}" -eq 1 ]; then
-                CMD_PREFIX="${CMD_PREFIX}taskset -c 0,1,2,3 "
-            fi
-
-            # Launch target query runner in background to capture PID for sampler
-            ${CMD_PREFIX} python3 "${RUNNER_SCRIPT}" \
-                --parquet-path "${PARQUET_FILE}" \
-                --row-group-size "${rg}" \
-                --output-json "${METRICS_JSON}" &
+            # Launch target query runner inside native cgroups v2 slice and taskset affinity
+            (
+                if [ -f "${CGROUP_PATH}/cgroup.procs" ]; then
+                    echo $$ > "${CGROUP_PATH}/cgroup.procs" 2>/dev/null || true
+                fi
+                if [ "${HAS_TASKSET}" -eq 1 ]; then
+                    exec taskset -c 0,1,2,3 python3 "${RUNNER_SCRIPT}" \
+                        --parquet-path "${PARQUET_FILE}" \
+                        --row-group-size "${rg}" \
+                        --output-json "${METRICS_JSON}"
+                else
+                    exec python3 "${RUNNER_SCRIPT}" \
+                        --parquet-path "${PARQUET_FILE}" \
+                        --row-group-size "${rg}" \
+                        --output-json "${METRICS_JSON}"
+                fi
+            ) &
             QUERY_PID=$!
 
             # Launch cgroups telemetry sampler daemon in background
