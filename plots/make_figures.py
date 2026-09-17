@@ -13,10 +13,29 @@ Styling Rules:
 """
 
 import argparse
-import json
 import glob
+import json
 import os
 import sys
+import subprocess
+from pathlib import Path
+
+# Auto-create and auto-switch to .venv python
+_project_root = Path(__file__).resolve().parent.parent
+_venv_dir = _project_root / ".venv"
+_venv_python = _venv_dir / "bin" / "python"
+_req_file = _project_root / "requirements.txt"
+
+if not _venv_python.exists():
+    print("[+] Virtual environment not found. Automatically creating '.venv'...", flush=True)
+    subprocess.run([sys.executable, "-m", "venv", str(_venv_dir)], check=True)
+    if _req_file.exists():
+        print("[+] Installing dependencies into '.venv' from requirements.txt...", flush=True)
+        subprocess.run([str(_venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
+        subprocess.run([str(_venv_python), "-m", "pip", "install", "-r", str(_req_file)], check=True)
+
+if sys.executable != str(_venv_python):
+    os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
 
 try:
     import numpy as np
