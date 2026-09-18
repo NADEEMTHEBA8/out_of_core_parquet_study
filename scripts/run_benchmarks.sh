@@ -40,6 +40,12 @@ echo "Data Dir     : ${DATA_DIR}"
 echo "Results Dir  : ${RESULTS_DIR}"
 echo "----------------------------------------------------------------------"
 
+if [ "$(id -u)" -ne 0 ]; then
+    echo "[!] ERROR: This script must be run as root (with sudo) to bypass cgroups v2 cross-hierarchy delegation restrictions."
+    echo "    Please run: sudo ./scripts/run_benchmarks.sh"
+    exit 1
+fi
+
 # 1. Environment Pre-Flight Checks & Virtualenv Activation
 if [ -f "${PROJECT_ROOT}/.venv/bin/activate" ]; then
     echo "[+] Activating virtual environment (${PROJECT_ROOT}/.venv)..."
