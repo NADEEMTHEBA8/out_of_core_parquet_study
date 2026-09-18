@@ -87,34 +87,36 @@ def run_polars_benchmark(parquet_path: str, row_group_size: str) -> dict:
         # Build LazyFrame Plan (Zero I/O during scan_parquet setup)
         lf = pl.scan_parquet(parquet_path)
 
-        # High-cardinality aggregation with wide projection
+        # High-cardinality aggregation — semantically identical to DuckDB SQL query:
+        #   WHERE l_shipdate <= '1998-12-01' AND l_comment NOT LIKE '%special%'
+        #   GROUP BY l_orderkey % 500000, l_returnflag, l_linestatus
+        # Forces: date column decompression + string dictionary scanning,
+        # projected scan volume > 1.6GB > 1GB cgroup memory.high threshold.
+        # Expected output: ~488,538 groups (matching DuckDB exactly).
         query = (
-            lf.select(
+            lf.filter(
+                (pl.col("l_shipdate") <= pl.date(1998, 12, 1))
+                & (~pl.col("l_comment").str.contains("special"))
+            )
+            .group_by(
                 [
-                    "l_orderkey",
-                    "l_partkey",
-                    "l_suppkey",
-                    "l_linenumber",
-                    "l_quantity",
-                    "l_extendedprice",
-                    "l_discount",
-                    "l_tax",
+                    (pl.col("l_orderkey") % 500000).alias("orderkey_bucket"),
                     "l_returnflag",
                     "l_linestatus",
-                    "l_shipdate",
-                    "l_commitdate",
-                    "l_receiptdate",
                 ]
             )
-            .group_by(pl.col("l_orderkey") % 500000)
             .agg(
                 [
-                    pl.len().alias("count"),
-                    pl.col("l_extendedprice").sum().alias("total_price"),
-                    pl.col("l_discount").mean().alias("avg_discount"),
-                    pl.col("l_quantity").sum().alias("total_quantity"),
+                    pl.col("l_quantity").sum().alias("sum_qty"),
+                    pl.col("l_extendedprice").sum().alias("sum_base_price"),
+                    (pl.col("l_extendedprice") * (1.0 - pl.col("l_discount")))
+                    .sum()
+                    .alias("sum_disc_price"),
+                    pl.col("l_quantity").mean().alias("avg_qty"),
+                    pl.len().alias("count_order"),
                 ]
             )
+            .sort("orderkey_bucket")
         )
 
         # Isolated execution timing around streaming collect
