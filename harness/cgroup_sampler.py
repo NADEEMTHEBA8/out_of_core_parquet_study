@@ -123,6 +123,22 @@ def read_cpu_temperature() -> float:
     return 0.0
 
 
+def read_cpu_frequency_mhz() -> float:
+    """
+    Reads the CPU frequency from the Linux cpufreq subsystem.
+    Returns frequency in MHz, or 0.0 if unavailable.
+    """
+    freq_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
+    if os.path.exists(freq_path):
+        try:
+            with open(freq_path, "r") as f:
+                # Kernel reports frequency in kHz
+                return float(f.read().strip()) / 1000.0
+        except Exception:
+            return 0.0
+    return 0.0
+
+
 def is_pid_alive(pid: int) -> bool:
     """Checks if target PID is running."""
     try:
@@ -157,6 +173,7 @@ def main():
         "workingset_refault",
         "allocstall",
         "cpu_temp_c",
+        "cpu_freq_mhz",
     ]
 
     start_time_ns = time.perf_counter_ns()
@@ -185,6 +202,7 @@ def main():
                 "workingset_refault": stats["workingset_refault"],
                 "allocstall": stats["allocstall"],
                 "cpu_temp_c": round(read_cpu_temperature(), 1),
+                "cpu_freq_mhz": round(read_cpu_frequency_mhz(), 1),
             }
 
             writer.writerow(row)
