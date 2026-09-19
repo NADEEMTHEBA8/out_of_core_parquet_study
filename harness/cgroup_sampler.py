@@ -107,6 +107,22 @@ def read_cgroup_memory_stats(cgroup_path: str) -> Dict[str, int]:
     return stats
 
 
+def read_cpu_temperature() -> float:
+    """
+    Reads the CPU temperature from the Linux thermal subsystem.
+    Returns temperature in Celsius, or 0.0 if unavailable.
+    """
+    temp_path = "/sys/class/thermal/thermal_zone0/temp"
+    if os.path.exists(temp_path):
+        try:
+            with open(temp_path, "r") as f:
+                # Kernel reports temperature in millidegrees Celsius
+                return float(f.read().strip()) / 1000.0
+        except Exception:
+            return 0.0
+    return 0.0
+
+
 def is_pid_alive(pid: int) -> bool:
     """Checks if target PID is running."""
     try:
@@ -140,6 +156,7 @@ def main():
         "pgmajfault",
         "workingset_refault",
         "allocstall",
+        "cpu_temp_c",
     ]
 
     start_time_ns = time.perf_counter_ns()
@@ -167,6 +184,7 @@ def main():
                 "pgmajfault": stats["pgmajfault"],
                 "workingset_refault": stats["workingset_refault"],
                 "allocstall": stats["allocstall"],
+                "cpu_temp_c": round(read_cpu_temperature(), 1),
             }
 
             writer.writerow(row)
