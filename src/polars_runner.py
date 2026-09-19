@@ -96,7 +96,6 @@ def run_polars_benchmark(parquet_path: str, row_group_size: str) -> dict:
         query = (
             lf.filter(
                 (pl.col("l_shipdate") <= pl.date(1998, 12, 1))
-                & (~pl.col("l_comment").str.contains("special"))
             )
             .group_by(
                 [

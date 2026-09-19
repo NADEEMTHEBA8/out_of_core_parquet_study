@@ -41,7 +41,6 @@ SELECT
 FROM lineitem_table
 WHERE
     l_shipdate <= CAST('1998-12-01' AS DATE)
-    AND l_comment NOT LIKE '%special%'
 GROUP BY
     l_orderkey % 500000,
     l_returnflag,
