@@ -93,8 +93,15 @@ def run_polars_benchmark(parquet_path: str, row_group_size: str) -> dict:
         # Forces: date column decompression + string dictionary scanning,
         # projected scan volume > 1.6GB > 1GB cgroup memory.high threshold.
         # Expected output: ~488,538 groups (matching DuckDB exactly).
+        # Enable global string cache to compress strings into UInt32, massively reducing hash table memory
+        pl.enable_string_cache()
+
         query = (
-            lf.filter(
+            lf.with_columns([
+                pl.col("l_returnflag").cast(pl.Categorical),
+                pl.col("l_linestatus").cast(pl.Categorical)
+            ])
+            .filter(
                 (pl.col("l_shipdate") <= pl.date(1998, 12, 1))
             )
             .group_by(
