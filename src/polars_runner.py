@@ -124,6 +124,9 @@ def run_polars_benchmark(parquet_path: str, row_group_size: str) -> dict:
             )
         )
 
+        # Deep Research Fix: Tune streaming chunk size to match smaller, memory-safe batches
+        pl.Config.set_streaming_chunk_size(8192)
+
         # Isolated execution timing around streaming collect
         query_start_ns = time.perf_counter_ns()
         try:
