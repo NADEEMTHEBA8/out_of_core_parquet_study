@@ -67,11 +67,19 @@ echo "  - CPU taskset affinity avail  : $((HAS_TASKSET))"
 echo "  - Sudo page-cache purge avail : $((HAS_SUDO))"
 echo "----------------------------------------------------------------------"
 
-# 2. Helper function to purge OS Page Cache
+# 1.5. Lock CPU Governor to 'performance'
+echo "[+] Locking CPU governor to 'performance' to prevent DVFS jitter..."
+if [ "${HAS_SUDO}" -eq 1 ]; then
+    echo "performance" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1 || true
+fi
+echo "----------------------------------------------------------------------"
+
+# 2. Helper function to purge OS Page Cache and Defragment Memory
 purge_page_cache() {
     sync
     if [ "${HAS_SUDO}" -eq 1 ]; then
         echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null 2>&1 || true
+        echo 1 | sudo tee /proc/sys/vm/compact_memory >/dev/null 2>&1 || true
     fi
 }
 
