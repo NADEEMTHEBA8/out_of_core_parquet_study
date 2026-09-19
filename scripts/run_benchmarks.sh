@@ -154,9 +154,9 @@ for rep in $(seq 1 ${REPETITIONS}); do
             # Wait for telemetry sampler to finish
             wait "${SAMPLER_PID}" || true
 
-            # Handle timeout (exit code 124) by creating a mock JSON so aggregate_metrics doesn't crash
-            if [ "${EXIT_CODE}" -eq 124 ]; then
-                echo "FAILED / TIMEOUT (Exceeded 3 minutes)"
+            # Handle timeout (124) and OOM kills (135 SIGBUS, 137 SIGKILL) by creating a mock JSON so aggregate_metrics doesn't crash
+            if [ "${EXIT_CODE}" -eq 124 ] || [ "${EXIT_CODE}" -eq 135 ] || [ "${EXIT_CODE}" -eq 137 ]; then
+                echo "FAILED / DNF (Exit code: ${EXIT_CODE})"
                 cat <<EOF > "${METRICS_JSON}"
 {
   "engine": "${engine}",
@@ -170,7 +170,7 @@ for rep in $(seq 1 ${REPETITIONS}); do
   "spilled_mb": 0.0,
   "threads": 4,
   "memory_limit": "500MB",
-  "error_message": "Process killed after 180s timeout due to severe page-fault thrashing",
+  "error_message": "Process killed (Exit Code: ${EXIT_CODE}) due to severe resource pressure or timeouts",
   "timestamp_utc": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
