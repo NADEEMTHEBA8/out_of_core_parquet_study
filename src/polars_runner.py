@@ -35,8 +35,6 @@ if sys.executable != str(_venv_python):
     os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
 
 # Critical: Set thread and streaming environment variables BEFORE importing Polars
-os.environ["POLARS_MAX_THREADS"] = "4"
-os.environ["RAYON_NUM_THREADS"] = "4"
 os.environ["POLARS_STREAMING_CHUNK_SIZE"] = "50000"
 
 import argparse
