@@ -16,3 +16,4 @@ venv/
 .venv/
 # OS metadata
 .DS_Store
+reference_code/
