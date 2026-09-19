@@ -68,7 +68,7 @@ def run_duckdb_benchmark(
     output_json: Path,
     row_group_size: str = "unknown",
     threads: int = 4,
-    memory_limit: Optional[str] = "800MB",
+    memory_limit: Optional[str] = "500MB",
     scratch_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     if scratch_dir is None:
@@ -166,8 +166,8 @@ def main() -> None:
     parser.add_argument(
         "--memory-limit",
         type=str,
-        default="1GB",
-        help="DuckDB max memory ceiling (default: 1GB)",
+        default="500MB",
+        help="DuckDB max memory ceiling (default: 500MB)",
     )
     parser.add_argument(
         "--scratch-dir",
