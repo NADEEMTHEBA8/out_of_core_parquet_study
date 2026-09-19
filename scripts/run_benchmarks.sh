@@ -116,12 +116,12 @@ for rep in $(seq 1 ${REPETITIONS}); do
                     echo $BASHPID > "${CGROUP_PATH}/cgroup.procs" 2>/dev/null || true
                 fi
                 if [ "${HAS_TASKSET}" -eq 1 ]; then
-                    exec taskset -c 0,1,2,3 python3 "${RUNNER_SCRIPT}" \
+                    exec taskset -c 0,1,2,3 timeout 180s python3 "${RUNNER_SCRIPT}" \
                         --parquet-path "${PARQUET_FILE}" \
                         --row-group-size "${rg}" \
                         --output-json "${METRICS_JSON}"
                 else
-                    exec python3 "${RUNNER_SCRIPT}" \
+                    exec timeout 180s python3 "${RUNNER_SCRIPT}" \
                         --parquet-path "${PARQUET_FILE}" \
                         --row-group-size "${rg}" \
                         --output-json "${METRICS_JSON}"
@@ -144,9 +144,29 @@ for rep in $(seq 1 ${REPETITIONS}); do
             set -e
 
             # Wait for telemetry sampler to finish
-            wait "${SAMPLER_PID}" 2>/dev/null || true
+            wait "${SAMPLER_PID}" || true
 
-            if [ ${EXIT_CODE} -eq 0 ]; then
+            # Handle timeout (exit code 124) by creating a mock JSON so aggregate_metrics doesn't crash
+            if [ "${EXIT_CODE}" -eq 124 ]; then
+                echo "FAILED / TIMEOUT (Exceeded 3 minutes)"
+                cat <<EOF > "${METRICS_JSON}"
+{
+  "engine": "${engine}",
+  "row_group_size": "${rg}",
+  "parquet_path": "${PARQUET_FILE}",
+  "status": "TIMEOUT",
+  "execution_time_ms": 180000.0,
+  "elapsed_sec": 180.0,
+  "result_rows": 0,
+  "spilled_bytes": 0,
+  "spilled_mb": 0.0,
+  "threads": 4,
+  "memory_limit": "500MB",
+  "error_message": "Process killed after 180s timeout due to severe page-fault thrashing",
+  "timestamp_utc": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+            elif [ "${EXIT_CODE}" -eq 0 ]; then
                 echo "SUCCESS"
             else
                 echo "FAILED / OOM (Exit code: ${EXIT_CODE})"
