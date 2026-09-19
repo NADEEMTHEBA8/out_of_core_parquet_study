@@ -35,7 +35,9 @@ if sys.executable != str(_venv_python):
     os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
 
 # Critical: Set thread and streaming environment variables BEFORE importing Polars
-# (Removed artificial chunk size limit to prevent internal streaming deadlocks)
+# Limit threads to 4 to prevent massive parallel chunk buffering from blowing past the 1GB cgroup limit.
+os.environ["POLARS_MAX_THREADS"] = "4"
+os.environ["RAYON_NUM_THREADS"] = "4"
 
 import argparse
 import json
