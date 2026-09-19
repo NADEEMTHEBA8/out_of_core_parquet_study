@@ -68,7 +68,7 @@ def run_duckdb_benchmark(
     output_json: Path,
     row_group_size: str = "unknown",
     threads: int = 4,
-    memory_limit: Optional[str] = "1GB",
+    memory_limit: Optional[str] = "800MB",
     scratch_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     if scratch_dir is None:
