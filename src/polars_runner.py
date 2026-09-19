@@ -35,7 +35,7 @@ if sys.executable != str(_venv_python):
     os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
 
 # Critical: Set thread and streaming environment variables BEFORE importing Polars
-os.environ["POLARS_STREAMING_CHUNK_SIZE"] = "50000"
+# (Removed artificial chunk size limit to prevent internal streaming deadlocks)
 
 import argparse
 import json
@@ -113,7 +113,6 @@ def run_polars_benchmark(parquet_path: str, row_group_size: str) -> dict:
                     pl.len().alias("count_order"),
                 ]
             )
-            .sort("orderkey_bucket")
         )
 
         # Isolated execution timing around streaming collect
@@ -122,6 +121,9 @@ def run_polars_benchmark(parquet_path: str, row_group_size: str) -> dict:
             res_df = query.collect(engine="streaming")
         except TypeError:
             res_df = query.collect(streaming=True)
+            
+        # Execute global sort eagerly after streaming aggregation completes
+        res_df = res_df.sort("orderkey_bucket")
         query_end_ns = time.perf_counter_ns()
 
         execution_time_ms = (query_end_ns - query_start_ns) / 1e6
