@@ -229,6 +229,8 @@ def generate_figure2_pareto_frontier(summary_file: str, output_dir: str):
     duckdb_stds = []
     polars_means = []
     polars_stds = []
+    duckdb_timeouts = []
+    polars_timeouts = []
 
     # Read summary JSON if present
     summary_data = []
@@ -252,13 +254,20 @@ def generate_figure2_pareto_frontier(summary_file: str, output_dir: str):
 
             polars_means.append(np.mean(p_times) if p_times else np.nan)
             polars_stds.append(1.96 * np.std(p_times, ddof=1) / np.sqrt(p_n) if p_n > 1 else 0.0)
+
+            d_to = any(d.get("status") == "TIMEOUT" for d in summary_data if d.get("engine") == "duckdb" and d.get("row_group_size") == rg)
+            p_to = any(d.get("status") == "TIMEOUT" for d in summary_data if d.get("engine") == "polars" and d.get("row_group_size") == rg)
+            duckdb_timeouts.append(d_to)
+            polars_timeouts.append(p_to)
     else:
         # Fallback baseline illustrative metrics for visualization structure
         duckdb_means = [24.2, 14.1, 11.5, 12.8, 16.4, 21.9]
         duckdb_stds = [1.2, 0.8, 0.5, 0.7, 1.1, 1.5]
+        duckdb_timeouts = [False] * 6
 
         polars_means = [32.5, 18.4, 15.2, 17.9, 28.6, 45.1]
         polars_stds = [2.1, 1.2, 0.9, 1.4, 3.2, 5.8]
+        polars_timeouts = [False] * 6
 
     fig, ax = plt.subplots(figsize=(7, 4.2))
 
@@ -282,6 +291,18 @@ def generate_figure2_pareto_frontier(summary_file: str, output_dir: str):
         capsize=4,
         label="Polars (Chunk-Fused Streaming)",
     )
+
+    # Plot explicit DNF / Timeout markers at the ceiling line
+    TIMEOUT_CEILING = 180.0
+    for i, (d_to, p_to) in enumerate(zip(duckdb_timeouts, polars_timeouts)):
+        if d_to:
+            ax.scatter(rg_positions[i], TIMEOUT_CEILING, color="#1f77b4", marker="x", s=80, zorder=5)
+            ax.annotate("DNF", (rg_positions[i], TIMEOUT_CEILING + 5), color="#1f77b4", ha="center", fontweight="bold", fontsize=8)
+        if p_to:
+            ax.scatter(rg_positions[i], TIMEOUT_CEILING, color="#ff7f0e", marker="x", s=80, zorder=5)
+            ax.annotate("DNF", (rg_positions[i], TIMEOUT_CEILING + 5), color="#ff7f0e", ha="center", fontweight="bold", fontsize=8)
+
+    ax.axhline(y=TIMEOUT_CEILING, color="red", linestyle="--", alpha=0.5, label="Timeout Ceiling (180s)")
 
     # Highlight optimal row-group continuum zone
     ax.axvspan(1.7, 2.3, color="gray", alpha=0.15, label="Optimal Row Group Zone (122K)")
