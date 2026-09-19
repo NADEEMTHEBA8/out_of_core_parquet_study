@@ -74,6 +74,14 @@ if [ "${HAS_SUDO}" -eq 1 ]; then
 fi
 echo "----------------------------------------------------------------------"
 
+# 1.6. Hardware Static Manifest
+echo "[+] Generating Static Hardware Manifest..."
+lscpu > "${RESULTS_DIR}/hardware_manifest.txt"
+uname -r >> "${RESULTS_DIR}/hardware_manifest.txt"
+if [ "${HAS_SUDO}" -eq 1 ]; then sudo nvme list >> "${RESULTS_DIR}/hardware_manifest.txt" 2>/dev/null || true; else nvme list >> "${RESULTS_DIR}/hardware_manifest.txt" 2>/dev/null || true; fi
+free -h >> "${RESULTS_DIR}/hardware_manifest.txt"
+echo "----------------------------------------------------------------------"
+
 # 2. Helper function to purge OS Page Cache and Defragment Memory
 purge_page_cache() {
     sync
@@ -83,81 +91,114 @@ purge_page_cache() {
     fi
 }
 
-# 3. Execution Matrix Loop (Interleaved by repetition)
+# 3. Execution Matrix Loop (2-Pass Architecture)
 TOTAL_RUNS=$(( ${#ENGINES[@]} * ${#ROW_GROUPS[@]} * REPETITIONS ))
-CURRENT_RUN=0
+SUMMARY_CSV="${RESULTS_DIR}/summary_runs.csv"
+SUMMARY_JSON="${RESULTS_DIR}/summary_metrics.json"
 
-SUMMARY_FILE="${RESULTS_DIR}/summary_metrics.json"
-echo "[" > "${SUMMARY_FILE}"
+echo "pass,engine,row_group_size,rep,status,execution_time_ms,spilled_bytes,peak_memory_bytes" > "${SUMMARY_CSV}"
+echo "[" > "${SUMMARY_JSON}"
 FIRST_JSON_ENTRY=1
 
-for rep in $(seq 1 ${REPETITIONS}); do
+# Execute everything for Pass A, then repeat for Pass B
+for PASS in A B; do
     echo "======================================================================"
-    echo ">>> STARTING EXPERIMENTAL REPETITION ${rep} / ${REPETITIONS}"
+    echo ">>> STARTING PASS ${PASS} (A=Memory Telemetry, B=Hardware PMU)"
     echo "======================================================================"
+    CURRENT_RUN=0
 
-    for rg in "${ROW_GROUPS[@]}"; do
-        PARQUET_FILE="${DATA_DIR}/lineitem_${rg}.parquet"
+    for rep in $(seq 1 ${REPETITIONS}); do
+        echo ">>> Pass ${PASS} - Repetition ${rep} / ${REPETITIONS}"
+        
+        for rg in "${ROW_GROUPS[@]}"; do
+            PARQUET_FILE="${DATA_DIR}/lineitem_${rg}.parquet"
 
-        if [ ! -f "${PARQUET_FILE}" ]; then
-            echo "[!] Error: Missing Parquet dataset '${PARQUET_FILE}'. Run scripts/generate_data.py first." >&2
-            exit 1
-        fi
+            if [ ! -f "${PARQUET_FILE}" ]; then
+                echo "[!] Error: Missing Parquet dataset '${PARQUET_FILE}'. Run scripts/generate_data.py first." >&2
+                exit 1
+            fi
 
-        for engine in "${ENGINES[@]}"; do
-            CURRENT_RUN=$((CURRENT_RUN + 1))
-            RUN_TAG="${engine}_${rg}_rep${rep}"
-            METRICS_JSON="${RAW_DIR}/metrics_${RUN_TAG}.json"
-            TELEMETRY_CSV="${RAW_DIR}/telemetry_${RUN_TAG}.csv"
+            for engine in "${ENGINES[@]}"; do
+                CURRENT_RUN=$((CURRENT_RUN + 1))
+                RUN_TAG="${engine}_${rg}_rep${rep}"
+                METRICS_JSON="${RAW_DIR}/metrics_pass${PASS}_${RUN_TAG}.json"
+                TELEMETRY_CSV="${RAW_DIR}/telemetry_pass${PASS}_${RUN_TAG}.csv"
+                PERF_TXT="${RAW_DIR}/perf_pass${PASS}_${RUN_TAG}.txt"
 
-            echo -n "[Run ${CURRENT_RUN}/${TOTAL_RUNS}] Executing ${engine} on rg=${rg} (rep ${rep})... "
+                echo -n "[Run ${CURRENT_RUN}/${TOTAL_RUNS}] Executing ${engine} on rg=${rg} (rep ${rep})... "
 
-            # Purge Page Cache before trial
-            purge_page_cache
+                # Purge Page Cache before trial
+                purge_page_cache
 
-            # Construct runner script command
-            RUNNER_SCRIPT="${PROJECT_ROOT}/src/${engine}_runner.py"
+                # Construct runner script command
+                RUNNER_SCRIPT="${PROJECT_ROOT}/src/${engine}_runner.py"
 
-            # Launch target query runner inside native cgroups v2 slice and taskset affinity
-            (
-                if [ -f "${CGROUP_PATH}/cgroup.procs" ]; then
-                    echo $BASHPID > "${CGROUP_PATH}/cgroup.procs" 2>/dev/null || true
-                fi
-                if [ "${HAS_TASKSET}" -eq 1 ]; then
-                    exec taskset -c 0,1,2,3 timeout -k 5s 180s python3 "${RUNNER_SCRIPT}" \
-                        --parquet-path "${PARQUET_FILE}" \
-                        --row-group-size "${rg}" \
-                        --output-json "${METRICS_JSON}"
+                # Launch target query runner inside native cgroups v2 slice and taskset affinity
+                (
+                    if [ -f "${CGROUP_PATH}/cgroup.procs" ]; then
+                        echo $BASHPID > "${CGROUP_PATH}/cgroup.procs" 2>/dev/null || true
+                    fi
+                    if [ "${HAS_TASKSET}" -eq 1 ]; then
+                        exec taskset -c 0,1,2,3 timeout -k 5s 180s python3 "${RUNNER_SCRIPT}" \
+                            --parquet-path "${PARQUET_FILE}" \
+                            --row-group-size "${rg}" \
+                            --output-json "${METRICS_JSON}"
+                    else
+                        exec timeout -k 5s 180s python3 "${RUNNER_SCRIPT}" \
+                            --parquet-path "${PARQUET_FILE}" \
+                            --row-group-size "${rg}" \
+                            --output-json "${METRICS_JSON}"
+                    fi
+                ) &
+                QUERY_PID=$!
+
+                # 2-Pass Divergence: Launch appropriate background daemon
+                SAMPLER_PID=""
+                if [ "${PASS}" == "A" ]; then
+                    python3 "${PROJECT_ROOT}/harness/cgroup_sampler.py" \
+                        --cgroup-path "${CGROUP_PATH}" \
+                        --pid "${QUERY_PID}" \
+                        --output-csv "${TELEMETRY_CSV}" \
+                        --interval-ms 20 >/dev/null 2>&1 &
+                    SAMPLER_PID=$!
                 else
-                    exec timeout -k 5s 180s python3 "${RUNNER_SCRIPT}" \
-                        --parquet-path "${PARQUET_FILE}" \
-                        --row-group-size "${rg}" \
-                        --output-json "${METRICS_JSON}"
+                    perf stat -e cycles,instructions,dTLB-loads,dTLB-load-misses,tlb:tlb_flush -p "${QUERY_PID}" -o "${PERF_TXT}" 2>&1 &
+                    SAMPLER_PID=$!
                 fi
-            ) &
-            QUERY_PID=$!
 
-            # Launch cgroups telemetry sampler daemon in background
-            python3 "${PROJECT_ROOT}/harness/cgroup_sampler.py" \
-                --cgroup-path "${CGROUP_PATH}" \
-                --pid "${QUERY_PID}" \
-                --output-csv "${TELEMETRY_CSV}" \
-                --interval-ms 20 >/dev/null 2>&1 &
-            SAMPLER_PID=$!
+                # Wait for query process to finish execution
+                set +e
+                wait "${QUERY_PID}"
+                EXIT_CODE=$?
+                set -e
 
-            # Wait for query process to finish execution
-            set +e
-            wait "${QUERY_PID}"
-            EXIT_CODE=$?
-            set -e
+                # Spilled Storage Extraction (DuckDB only) BEFORE cleanup
+                SPILLED_BYTES=0
+                if [ "${engine}" == "duckdb" ]; then
+                    if [ -d "$HOME/duckdb_scratch" ]; then
+                        SPILLED_BYTES=$(du -sb "$HOME/duckdb_scratch" 2>/dev/null | cut -f1) || SPILLED_BYTES=0
+                    fi
+                    # Wipe the scratch directory instantly
+                    rm -rf "$HOME/duckdb_scratch"/* 2>/dev/null || true
+                fi
 
-            # Wait for telemetry sampler to finish
-            wait "${SAMPLER_PID}" || true
+                # Wait for telemetry/perf sampler to finish
+                if [ -n "${SAMPLER_PID}" ]; then
+                    wait "${SAMPLER_PID}" || true
+                fi
 
-            # Handle timeout (124) and OOM kills (135 SIGBUS, 137 SIGKILL) by creating a mock JSON so aggregate_metrics doesn't crash
-            if [ "${EXIT_CODE}" -eq 124 ] || [ "${EXIT_CODE}" -eq 135 ] || [ "${EXIT_CODE}" -eq 137 ]; then
-                echo "FAILED / DNF (Exit code: ${EXIT_CODE})"
-                cat <<EOF > "${METRICS_JSON}"
+                # Peak Memory Extraction
+                PEAK_BYTES=0
+                if [ -f "${CGROUP_PATH}/memory.peak" ]; then
+                    PEAK_BYTES=$(cat "${CGROUP_PATH}/memory.peak") || PEAK_BYTES=0
+                fi
+
+                # Handle timeout (124) and OOM kills (135 SIGBUS, 137 SIGKILL) by creating a mock JSON so aggregate_metrics doesn't crash
+                STATUS="SUCCESS"
+                if [ "${EXIT_CODE}" -eq 124 ] || [ "${EXIT_CODE}" -eq 135 ] || [ "${EXIT_CODE}" -eq 137 ]; then
+                    STATUS="TIMEOUT"
+                    echo "FAILED / DNF (Exit code: ${EXIT_CODE})"
+                    cat <<EOF > "${METRICS_JSON}"
 {
   "engine": "${engine}",
   "row_group_size": "${rg}",
@@ -166,7 +207,7 @@ for rep in $(seq 1 ${REPETITIONS}); do
   "execution_time_ms": 180000.0,
   "elapsed_sec": 180.0,
   "result_rows": 0,
-  "spilled_bytes": 0,
+  "spilled_bytes": ${SPILLED_BYTES},
   "spilled_mb": 0.0,
   "threads": 4,
   "memory_limit": "500MB",
@@ -174,33 +215,44 @@ for rep in $(seq 1 ${REPETITIONS}); do
   "timestamp_utc": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
-            elif [ "${EXIT_CODE}" -eq 0 ]; then
-                echo "SUCCESS"
-            else
-                echo "FAILED / OOM (Exit code: ${EXIT_CODE})"
-            fi
-
-            # Append trial metrics to summary JSON if metrics file exists
-            if [ -f "${METRICS_JSON}" ]; then
-                if [ ${FIRST_JSON_ENTRY} -eq 1 ]; then
-                    FIRST_JSON_ENTRY=0
+                elif [ "${EXIT_CODE}" -eq 0 ]; then
+                    echo "SUCCESS"
                 else
-                    echo "," >> "${SUMMARY_FILE}"
+                    STATUS="ERROR_${EXIT_CODE}"
+                    echo "FAILED / ERROR (Exit code: ${EXIT_CODE})"
                 fi
-                cat "${METRICS_JSON}" >> "${SUMMARY_FILE}"
-            fi
 
-            # Sleep 1s to allow thermal stabilization between runs
-            sleep 1
+                # Append trial metrics to summary CSV
+                EXEC_TIME_MS="0.0"
+                if [ -f "${METRICS_JSON}" ]; then
+                    EXEC_TIME_MS=$(grep -o '"execution_time_ms": [0-9.]*' "${METRICS_JSON}" | cut -d' ' -f2 || echo "0.0")
+                fi
+                echo "${PASS},${engine},${rg},${rep},${STATUS},${EXEC_TIME_MS},${SPILLED_BYTES},${PEAK_BYTES}" >> "${SUMMARY_CSV}"
+
+                # Append to summary JSON (Only during Pass A to maintain 60-run graph structure)
+                if [ "${PASS}" == "A" ] && [ -f "${METRICS_JSON}" ]; then
+                    if [ ${FIRST_JSON_ENTRY} -eq 1 ]; then
+                        FIRST_JSON_ENTRY=0
+                    else
+                        echo "," >> "${SUMMARY_JSON}"
+                    fi
+                    cat "${METRICS_JSON}" >> "${SUMMARY_JSON}"
+                fi
+
+                # Sleep 1s to allow thermal stabilization between runs
+                sleep 1
+            done
         done
     done
 done
 
-echo "" >> "${SUMMARY_FILE}"
-echo "]" >> "${SUMMARY_FILE}"
+echo "" >> "${SUMMARY_JSON}"
+echo "]" >> "${SUMMARY_JSON}"
 
 echo "======================================================================"
-echo "    BENCHMARK SUITE COMPLETE! All 60 trials executed cleanly.         "
-echo "    Summary Metrics : ${SUMMARY_FILE}"
-echo "    Raw Telemetry   : ${RAW_DIR}/"
+echo "    BENCHMARK SUITE COMPLETE! Pass A and Pass B executed cleanly.     "
+echo "    Summary Metrics (JSON) : ${SUMMARY_JSON}"
+echo "    Summary Metrics (CSV)  : ${SUMMARY_CSV}"
+echo "    Hardware Manifest      : ${RESULTS_DIR}/hardware_manifest.txt"
+echo "    Raw Telemetry          : ${RAW_DIR}/"
 echo "======================================================================"
