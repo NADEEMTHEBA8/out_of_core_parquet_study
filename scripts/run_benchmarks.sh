@@ -116,12 +116,12 @@ for rep in $(seq 1 ${REPETITIONS}); do
                     echo $BASHPID > "${CGROUP_PATH}/cgroup.procs" 2>/dev/null || true
                 fi
                 if [ "${HAS_TASKSET}" -eq 1 ]; then
-                    exec taskset -c 0,1,2,3 timeout 180s python3 "${RUNNER_SCRIPT}" \
+                    exec taskset -c 0,1,2,3 timeout -k 5s 180s python3 "${RUNNER_SCRIPT}" \
                         --parquet-path "${PARQUET_FILE}" \
                         --row-group-size "${rg}" \
                         --output-json "${METRICS_JSON}"
                 else
-                    exec timeout 180s python3 "${RUNNER_SCRIPT}" \
+                    exec timeout -k 5s 180s python3 "${RUNNER_SCRIPT}" \
                         --parquet-path "${PARQUET_FILE}" \
                         --row-group-size "${rg}" \
                         --output-json "${METRICS_JSON}"
