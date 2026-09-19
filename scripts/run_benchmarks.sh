@@ -82,6 +82,11 @@ if [ "${HAS_SUDO}" -eq 1 ]; then sudo nvme list >> "${RESULTS_DIR}/hardware_mani
 free -h >> "${RESULTS_DIR}/hardware_manifest.txt"
 echo "----------------------------------------------------------------------"
 
+# 1.7. Dataset Manifest
+echo "[+] Generating Dataset Manifest..."
+du -sb "${DATA_DIR}"/*.parquet > "${RESULTS_DIR}/dataset_manifest.txt" 2>/dev/null || true
+echo "----------------------------------------------------------------------"
+
 # 2. Helper function to purge OS Page Cache and Defragment Memory
 purge_page_cache() {
     sync
