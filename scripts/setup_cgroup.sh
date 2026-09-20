@@ -17,10 +17,10 @@ fi
 
 echo "[3/4] Enforcing memory limits and granting user permissions..."
 # Soft Limit: 1 GB (1,073,741,824 bytes) - Triggers direct reclaim throttling
-echo "1G" | sudo tee "$CGROUP_DIR/memory.high" > /dev/null
+echo "1500M" | sudo tee "$CGROUP_DIR/memory.high" > /dev/null
 
 # Hard Limit: 1.5 GB (1,572,864,000 bytes) - Safety ceiling
-echo "1500M" | sudo tee "$CGROUP_DIR/memory.max" > /dev/null
+echo "2000M" | sudo tee "$CGROUP_DIR/memory.max" > /dev/null
 
 # Disable Swap: 0 bytes - Prevents anonymous heap from paging to swap
 echo "0" | sudo tee "$CGROUP_DIR/memory.swap.max" > /dev/null
